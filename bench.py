@@ -153,8 +153,8 @@ def benchmark_full_file(model, waveform, device, batch_size=32, step_seconds=2.5
         t_start = time.perf_counter()
 
     with torch.inference_mode(), nvtx_range(f"full-file:bs={batch_size}"):
-        for i in range(0, chunks.shape[0], batch_size):
-            batch = chunks[i : i + batch_size].to(device, non_blocking=True)
+        for i, batch in enumerate(chunks.split(batch_size)):
+            batch = batch.to(device, non_blocking=True)
             with nvtx_range(f"batch[{i}]"), cuda_sync(device):
                 t0 = time.perf_counter()
                 scores = model(batch)
