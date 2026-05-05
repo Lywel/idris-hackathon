@@ -179,15 +179,37 @@ def benchmark_full_file(model, waveform, device, batch_size=32, step_seconds=2.5
 
 # --- profilers ----------------------------------------------------------
 
-def profile_torch(model, device, row_limit=15) -> str:
-    """PyTorch built-in profiler (CPU + CUDA via CUPTI). Returns top-ops table."""
+def profile_torch(model, device, warmup=5, row_limit=15) -> str:
+    """PyTorch built-in profiler (CPU + CUDA via CUPTI).
+
+    Returns a string with two top-N tables: one sorted by GPU self time,
+    one by CPU self time. CPU "total" includes async kernel launch overhead
+    and is generally NOT idle host work.
+    """
     activities = [
         torch.profiler.ProfilerActivity.CPU,
         torch.profiler.ProfilerActivity.CUDA,
     ]
     dummy = torch.zeros(1, 1, WINDOW_SAMPLES, device=device)
-    with torch.inference_mode(), torch.profiler.profile(activities=activities) as prof:
+
+    # Warm up *outside* the profiler so cuDNN algo selection / handle setup
+    # / lazy CUDA init are not attributed to the timed forward.
+    with torch.inference_mode():
+        for _ in range(warmup):
+            model(dummy)
+    torch.cuda.synchronize(device)
+
+    with torch.inference_mode(), torch.profiler.profile(
+        activities=activities, acc_events=True
+    ) as prof:
         with nvtx_range("torch-profile"):
             model(dummy)
         torch.cuda.synchronize(device)
-    return prof.key_averages().table(sort_by="cuda_time_total", row_limit=row_limit)
+
+    avg = prof.key_averages()
+    return (
+        "-- top ops by GPU self time --\n"
+        + avg.table(sort_by="self_cuda_time_total", row_limit=row_limit)
+        + "\n-- top ops by CPU self time (host work, includes async launch) --\n"
+        + avg.table(sort_by="self_cpu_time_total", row_limit=row_limit)
+    )
