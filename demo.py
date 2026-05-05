@@ -42,12 +42,19 @@ def parse_args():
     p.add_argument("audio")
     p.add_argument("--warmup", type=int, default=3)
     p.add_argument("--runs", type=int, default=50)
-    p.add_argument("--batch-size", type=int, default=32)
+    p.add_argument("--batch-size", type=int, default=64)
     p.add_argument("--step", type=float, default=2.5,
                    help="sliding window step in seconds (default 2.5 -> 50%% overlap)")
     p.add_argument("--no-full-file", action="store_true")
     p.add_argument("--profile-torch", action="store_true",
                    help="run PyTorch profiler on a single window")
+    p.add_argument("--chrome-trace", default=None,
+                   help="path to also write a Chrome/Perfetto JSON trace "
+                        "(implies --profile-torch)")
+    p.add_argument("--tb-trace", default=None,
+                   help="directory to write a TensorBoard-compatible trace "
+                        "(implies --profile-torch). View with `tensorboard --logdir DIR` "
+                        "after `pip install torch-tb-profiler`")
     p.add_argument("--nsys", action="store_true",
                    help="toggle cudaProfilerStart/Stop around inference for Nsight Systems")
     return p.parse_args()
@@ -114,9 +121,17 @@ def main():
             report_throughput(result, args.batch_size, args.step)
             report_memory(result)
 
-    if args.profile_torch:
+    if args.profile_torch or args.chrome_trace or args.tb_trace:
         print("\n=== torch.profiler (single window) ===")
-        print(profile_torch(model, device))
+        print(profile_torch(model, device,
+                            chrome_trace=args.chrome_trace,
+                            tb_dir=args.tb_trace))
+        if args.chrome_trace:
+            print(f"  chrome trace written to: {args.chrome_trace}")
+            print(f"  open at https://ui.perfetto.dev/  or  chrome://tracing")
+        if args.tb_trace:
+            print(f"  tensorboard trace written under: {args.tb_trace}")
+            print(f"  view with: tensorboard --logdir {args.tb_trace}")
 
     print("\nReminder: LSTM + classifier head are untrained; values not meaningful.")
 

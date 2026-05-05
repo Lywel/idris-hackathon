@@ -179,12 +179,20 @@ def benchmark_full_file(model, waveform, device, batch_size=32, step_seconds=2.5
 
 # --- profilers ----------------------------------------------------------
 
-def profile_torch(model, device, warmup=5, row_limit=15) -> str:
+def profile_torch(model, device, warmup=5, row_limit=15, chrome_trace=None, tb_dir=None) -> str:
     """PyTorch built-in profiler (CPU + CUDA via CUPTI).
 
     Returns a string with two top-N tables: one sorted by GPU self time,
     one by CPU self time. CPU "total" includes async kernel launch overhead
     and is generally NOT idle host work.
+
+    If `chrome_trace` is given, also writes a Chrome/Perfetto JSON trace to
+    that path. Open it at chrome://tracing or https://ui.perfetto.dev/.
+
+    If `tb_dir` is given, writes a TensorBoard-compatible Kineto trace into
+    that directory via tensorboard_trace_handler. View with:
+        pip install torch-tb-profiler
+        tensorboard --logdir <tb_dir>
     """
     activities = [
         torch.profiler.ProfilerActivity.CPU,
@@ -199,12 +207,23 @@ def profile_torch(model, device, warmup=5, row_limit=15) -> str:
             model(dummy)
     torch.cuda.synchronize(device)
 
+    on_trace_ready = (
+        torch.profiler.tensorboard_trace_handler(str(tb_dir))
+        if tb_dir
+        else None
+    )
+
     with torch.inference_mode(), torch.profiler.profile(
-        activities=activities, acc_events=True
+        activities=activities,
+        acc_events=True,
+        on_trace_ready=on_trace_ready,
     ) as prof:
         with nvtx_range("torch-profile"):
             model(dummy)
         torch.cuda.synchronize(device)
+
+    if chrome_trace:
+        prof.export_chrome_trace(str(chrome_trace))
 
     avg = prof.key_averages()
     return (

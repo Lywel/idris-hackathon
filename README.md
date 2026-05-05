@@ -34,21 +34,40 @@ uv run python demo.py audio.wav --profile-torch
 Prints top ops sorted by `cuda_time_total`. Uses CUPTI under the hood, so kernel times are real.
 
 ### Nsight Systems (system-wide timeline)
-NVTX ranges (`build_model`, `warmup`, `single-window`, `full-file:bs=N`, `batch[i]`) are always emitted.
+NVTX ranges (`build_model`, `warmup`, `single-window`, `full-file:bs=N`, `batch[i]`) are always emitted by the Python code; Nsight Systems renders them as bars on the timeline.
 
-Capture only the inference region (skip model build / WavLM download):
+Quick capture (helper script wraps the right `nsys` flags):
+```
+./nsys_profile.sh B047.wav --no-full-file --runs 10
+```
+Output: `sseriouss_trace.nsys-rep`.
+
+Inspect on the CLI:
+```
+nsys stats --report nvtx_sum --report cuda_gpu_kern_sum sseriouss_trace.nsys-rep
+```
+- `nvtx_sum`: total time inside each NVTX range (`:warmup`, `:single-window`, `:full-file:bs=N`, `:batch[i]`).
+- `cuda_gpu_kern_sum`: kernel-by-kernel time on the GPU (LSTM, GEMMs, conv, FlashAttention, ...).
+
+Or open the GUI:
+```
+nsys-ui sseriouss_trace.nsys-rep
+```
+You'll see a CPU thread track + a CUDA stream track + an "NVTX" track with the named ranges. Zoom into one `batch[i]` range to see the exact kernel sequence.
+
+#### Manual invocation (if you don't want the helper)
 ```
 nsys profile \
   --capture-range=cudaProfilerApi --capture-range-end=stop \
   --trace=cuda,nvtx,osrt \
   -o sseriouss_trace \
-  uv run python demo.py audio.wav --nsys
+  uv run python demo.py B047.wav --nsys
 ```
-Open `sseriouss_trace.nsys-rep` in the Nsight Systems GUI.
+The `--nsys` flag in `demo.py` calls `cudaProfilerStart/Stop` so only the inference region is captured (not the WavLM download, model build, or argparse).
 
-Or capture everything:
+To capture **everything** instead (no cudaProfilerApi gating):
 ```
-nsys profile -o sseriouss_trace --trace=cuda,nvtx uv run python demo.py audio.wav
+nsys profile -o sseriouss_trace --trace=cuda,nvtx uv run python demo.py B047.wav
 ```
 
 ### Nsight Compute (single-kernel deep dive)
