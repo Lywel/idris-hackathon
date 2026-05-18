@@ -23,7 +23,7 @@ def _pop(*_):
 register_module_forward_pre_hook(_push)
 register_module_forward_hook(_pop)
 
-pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1").to(
+pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-community-1").to(
     torch.device("cuda")
 )
 
