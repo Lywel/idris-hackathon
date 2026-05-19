@@ -8,6 +8,7 @@ capture audio tag:
     nsys profile \
         --capture-range=cudaProfilerApi --capture-range-end=stop \
         --trace=cuda,nvtx,osrt --force-overwrite=true \
+        --pytorch=autograd-shapes-nvtx \
         -o trace_{{tag}} \
         uv run python bench.py {{audio}}
 
